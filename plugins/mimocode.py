@@ -70,6 +70,17 @@ async def download_image(url: str) -> str | None:
         logger.warning(f"Image download error: {e}")
     return None
 
+# ── Session key helper ──────────────────────────────────────
+def get_session_key(event: MessageEvent) -> str:
+    """Get session key: group_{group_openid} for groups, user_{user_id} for C2C."""
+    group_openid = getattr(event, 'group_openid', None)
+    if group_openid:
+        return f"group_{group_openid}"
+    return f"user_{event.get_user_id()}"
+
+def get_chat_type(event: MessageEvent) -> str:
+    return "群聊" if getattr(event, 'group_openid', None) else "私聊"
+
 # ── Handlers ────────────────────────────────────────────────
 new_cmd = on_command("new", priority=1, block=True)
 session_cmd = on_command("session", aliases={"sid"}, priority=1, block=True)
@@ -79,24 +90,27 @@ msg_handler = on_message(priority=5, block=True)
 
 @new_cmd.handle()
 async def handle_new(matcher: Matcher, event: MessageEvent):
-    sessions.clear(event.get_user_id())
+    key = get_session_key(event)
+    sessions.clear(key)
     await matcher.finish("已开启新对话。")
 
 @session_cmd.handle()
 async def handle_session(matcher: Matcher, event: MessageEvent):
-    sid = sessions.get(event.get_user_id())
-    await matcher.finish(f"当前会话: {sid or '(无)'}")
+    key = get_session_key(event)
+    sid = sessions.get(key)
+    chat = get_chat_type(event)
+    await matcher.finish(f"[{chat}] 当前会话: {sid or '(无)'}")
 
 @help_cmd.handle()
-async def handle_help(matcher: Matcher):
-    await matcher.finish(
-        "命令列表:\n"
-        "/new - 开启新对话\n"
-        "/session - 查看当前会话\n"
-        "/backend - 查看当前AI后端\n"
-        "/help - 显示此帮助\n"
-        "\n直接发消息即可对话，支持图片。"
-    )
+async def handle_help(matcher: Matcher, event: MessageEvent):
+    chat = get_chat_type(event)
+    text = f"[{chat}] 命令列表:\n"
+    text += "/new - 开启新对话\n"
+    text += "/session - 查看当前会话\n"
+    text += "/backend - 查看当前AI后端\n"
+    text += "/help - 显示此帮助\n"
+    text += "\n直接发消息即可对话，支持图片。"
+    await matcher.finish(text)
 
 @backend_cmd.handle()
 async def handle_backend(matcher: Matcher):
@@ -106,14 +120,14 @@ async def handle_backend(matcher: Matcher):
 
 @msg_handler.handle()
 async def handle_message(matcher: Matcher, event: MessageEvent):
-    uid = event.get_user_id()
-    _user_queues[uid].put_nowait((matcher, event))
-    if uid not in _active_processors:
-        _active_processors.add(uid)
-        asyncio.create_task(_process_queue(uid))
+    key = get_session_key(event)
+    _user_queues[key].put_nowait((matcher, event))
+    if key not in _active_processors:
+        _active_processors.add(key)
+        asyncio.create_task(_process_queue(key))
 
-async def _process_queue(uid: str):
-    q = _user_queues[uid]
+async def _process_queue(key: str):
+    q = _user_queues[key]
     try:
         while True:
             try:
@@ -135,13 +149,13 @@ async def _process_queue(uid: str):
 
                 if not text and not file_path: continue
 
-                sid = sessions.get(uid)
+                sid = sessions.get(key)
                 out, new_sid = await asyncio.get_event_loop().run_in_executor(
                     None, run_ai, text, sid, file_path
                 )
 
                 if new_sid and new_sid != sid:
-                    sessions.set(uid, new_sid)
+                    sessions.set(key, new_sid)
 
                 if file_path:
                     try: os.unlink(file_path)
@@ -152,4 +166,4 @@ async def _process_queue(uid: str):
             except Exception:
                 logger.error(f"handle_message error:\n{traceback.format_exc()}")
     finally:
-        _active_processors.discard(uid)
+        _active_processors.discard(key)
