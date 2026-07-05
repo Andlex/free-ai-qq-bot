@@ -1,0 +1,17 @@
+[Unit]
+Description=Free AI QQ Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/mi/mimocode-qq-bot/.venv/bin/python bot.py
+WorkingDirectory=/home/mi/mimocode-qq-bot
+Restart=always
+RestartSec=10
+MemoryMax=1G
+Environment=HOME=/home/mi
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/mi/.local/bin
+
+[Install]
+WantedBy=default.target
