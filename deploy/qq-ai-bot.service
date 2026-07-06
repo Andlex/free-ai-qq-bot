@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/home/mi/mimocode-qq-bot/.venv/bin/python bot.py
-WorkingDirectory=/home/mi/mimocode-qq-bot
+ExecStart=/home/mi/free-ai-qq-bot/.venv/bin/python bot.py
+WorkingDirectory=/home/mi/free-ai-qq-bot
 Restart=always
 RestartSec=10
 MemoryMax=1G
